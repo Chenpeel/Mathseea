@@ -1,0 +1,15 @@
+[package]
+name = "mathseea"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mathseea-model.workspace = true
+mathseea-graph-io.workspace = true
+mathseea-graph-engine.workspace = true
+mathseea-graph-view.workspace = true
+eframe.workspace = true
+
+[lints]
+workspace = true

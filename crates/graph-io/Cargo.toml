@@ -1,0 +1,11 @@
+[package]
+name = "mathseea-graph-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mathseea-model.workspace = true
+
+[lints]
+workspace = true
