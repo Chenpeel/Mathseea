@@ -1,5 +1,7 @@
+use std::collections::HashSet;
+
 use egui::epaint::CubicBezierShape;
-use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
+use egui::{Align, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use mathseea_model::{Highlight, ImportGraph, Layout, Rgb, Selection};
 
 use crate::camera::Camera;
@@ -17,6 +19,23 @@ pub(crate) struct Scene<'a> {
 
 impl Scene<'_> {
     pub(crate) fn paint(&self, painter: &Painter, click: Option<Pos2>) -> Option<ViewEvent> {
+        self.paint_impl::<false>(painter, click)
+    }
+
+    #[cfg(test)]
+    pub(super) fn paint_reference(
+        &self,
+        painter: &Painter,
+        click: Option<Pos2>,
+    ) -> Option<ViewEvent> {
+        self.paint_impl::<true>(painter, click)
+    }
+
+    fn paint_impl<const REFERENCE: bool>(
+        &self,
+        painter: &Painter,
+        click: Option<Pos2>,
+    ) -> Option<ViewEvent> {
         if self.options.show_edges {
             self.paint_edges(painter);
         }
@@ -24,7 +43,15 @@ impl Scene<'_> {
         let mut nearest_distance = f32::INFINITY;
         let clip = painter.clip_rect();
         let zoom = self.camera.relative_zoom();
+        let mut highlighted_topics =
+            (!REFERENCE && self.options.show_topic_labels && self.highlight.active)
+                .then(HashSet::new);
         for (id, (node, placement)) in self.graph.nodes.iter().zip(&self.layout.nodes).enumerate() {
+            if let Some(topics) = &mut highlighted_topics
+                && self.highlight.nodes[id]
+            {
+                topics.insert(node.topic.as_str());
+            }
             let position = self.camera.project(placement.position, self.viewport);
             let radius = self.camera.radius(placement.radius);
             let selected = match self.selection {
@@ -54,7 +81,7 @@ impl Scene<'_> {
                 } else {
                     node.name.rsplit('.').next().unwrap_or(&node.name)
                 };
-                paint_label(
+                paint_label::<REFERENCE>(
                     painter,
                     position + Vec2::new(radius + 4.0, 0.0),
                     Align2::LEFT_CENTER,
@@ -72,11 +99,17 @@ impl Scene<'_> {
                 let related =
                     !self.highlight.active
                         || selected
-                        || self.graph.nodes.iter().enumerate().any(|(id, node)| {
-                            node.topic == label.topic && self.highlight.nodes[id]
-                        });
+                        || if REFERENCE {
+                            self.graph.nodes.iter().enumerate().any(|(id, node)| {
+                                node.topic == label.topic && self.highlight.nodes[id]
+                            })
+                        } else {
+                            highlighted_topics
+                                .as_ref()
+                                .is_some_and(|topics| topics.contains(label.topic.as_str()))
+                        };
                 let position = self.camera.project(label.position, self.viewport);
-                let bounds = paint_label(
+                let bounds = paint_label::<REFERENCE>(
                     painter,
                     position,
                     Align2::CENTER_BOTTOM,
@@ -143,7 +176,16 @@ fn color(rgb: Rgb, related: bool) -> Color32 {
     }
 }
 
-fn paint_label(
+// Only Min alignment fixes an exact lower bound without knowing text size.
+// Center/Max anchors may extend into the clip, so leave them to precise layout.
+fn label_is_definitely_offscreen(position: Pos2, align: Align2, clip: Rect) -> bool {
+    position.is_finite()
+        && clip.is_finite()
+        && ((align.x() == Align::Min && position.x > clip.right())
+            || (align.y() == Align::Min && position.y > clip.bottom()))
+}
+
+fn paint_label<const REFERENCE: bool>(
     painter: &Painter,
     position: Pos2,
     align: Align2,
@@ -151,10 +193,95 @@ fn paint_label(
     font: FontId,
     color: Color32,
 ) -> Rect {
+    if !REFERENCE && label_is_definitely_offscreen(position, align, painter.clip_rect()) {
+        return Rect::NOTHING;
+    }
     let galley = painter.layout_no_wrap(text.to_owned(), font, color);
     let bounds = align.anchor_size(position, galley.size());
     if painter.clip_rect().intersects(bounds) {
         painter.galley(bounds.min, galley, color);
     }
     bounds
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn early_culling_proves_nonintersection_for_all_alignments() {
+        let clip = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0));
+        for align in [Align::Min, Align::Center, Align::Max]
+            .into_iter()
+            .flat_map(|x| [Align::Min, Align::Center, Align::Max].map(|y| Align2([x, y])))
+        {
+            for x in [-300.0, -1.0, 0.0, 100.0, 100.001, 300.0] {
+                for y in [-300.0, -1.0, 0.0, 100.0, 100.001, 300.0] {
+                    let position = Pos2::new(x, y);
+                    if label_is_definitely_offscreen(position, align, clip) {
+                        for size in [Vec2::ZERO, Vec2::splat(1.0), Vec2::new(1000.0, 500.0)] {
+                            assert!(!clip.intersects(align.anchor_size(position, size)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn culling_keeps_boundary_centered_and_incoming_long_labels() {
+        let clip = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0));
+        for (position, align) in [
+            (Pos2::new(100.0, 50.0), Align2::LEFT_CENTER),
+            (Pos2::new(-200.0, 50.0), Align2::LEFT_CENTER),
+            (Pos2::new(50.0, 100.0), Align2::LEFT_TOP),
+            (Pos2::new(50.0, -1.0), Align2::CENTER_BOTTOM),
+            (Pos2::new(110.0, 50.0), Align2::CENTER_CENTER),
+            (Pos2::new(110.0, 50.0), Align2::RIGHT_CENTER),
+        ] {
+            assert!(!label_is_definitely_offscreen(position, align, clip));
+        }
+        assert!(!label_is_definitely_offscreen(
+            Pos2::new(f32::NAN, 0.0),
+            Align2::LEFT_TOP,
+            clip,
+        ));
+    }
+
+    #[test]
+    fn definitely_offscreen_label_does_not_enter_font_layout_cache() {
+        let context = egui::Context::default();
+        let clip = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0));
+        let output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(clip),
+                ..Default::default()
+            },
+            |ui| {
+                let painter = ui.painter_at(clip);
+                let before = painter.fonts(|fonts| fonts.num_galleys_in_cache());
+                let bounds = paint_label::<false>(
+                    &painter,
+                    Pos2::new(101.0, 50.0),
+                    Align2::LEFT_CENTER,
+                    "offscreen_unique_label",
+                    FontId::proportional(12.0),
+                    Color32::WHITE,
+                );
+                assert_eq!(bounds, Rect::NOTHING);
+                assert_eq!(before, painter.fonts(|fonts| fonts.num_galleys_in_cache()));
+                let reference = paint_label::<true>(
+                    &painter,
+                    Pos2::new(101.0, 50.0),
+                    Align2::LEFT_CENTER,
+                    "offscreen_unique_label",
+                    FontId::proportional(12.0),
+                    Color32::WHITE,
+                );
+                assert!(!clip.intersects(reference));
+                assert!(painter.fonts(|fonts| fonts.num_galleys_in_cache()) > before);
+            },
+        );
+        output.drop_without_applying_deltas();
+    }
 }
