@@ -1,2 +1,7 @@
-//! 在进程内读取, 扫描和导出 Mathlib 导入图.
-//! 按 docs/contracts.md 实现公共接口. 当前文件只建立独立 crate 边界.
+//! 进程内的原文本图 IO 与 Mathlib 文件头扫描; 不启动 Lean 或其他外部程序.
+
+mod lean;
+mod legacy;
+
+pub use lean::scan_mathlib;
+pub use legacy::{export_legacy, parse_legacy, read_legacy, write_legacy};

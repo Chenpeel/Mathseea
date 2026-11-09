@@ -1,2 +1,13 @@
-//! 在进程内执行图分析和确定性布局.
-//! 按 docs/contracts.md 实现公共接口. 当前文件只建立独立 crate 边界.
+//! 纯进程内的确定性图分析、布局与关系高亮.
+//! 边始终从 dependency 指向 dependent, 所有公开入口均校验图模型.
+
+mod highlight;
+mod layout;
+mod topology;
+
+pub use highlight::highlight;
+pub use layout::compute_layout;
+pub use topology::topological_order;
+
+#[cfg(test)]
+mod tests;
