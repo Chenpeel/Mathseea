@@ -3,6 +3,7 @@
 mod app;
 mod cli;
 mod document;
+mod theme;
 
 use std::process::ExitCode;
 
@@ -40,7 +41,7 @@ fn run() -> Result<(), String> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([800.0, 500.0]),
+            .with_min_inner_size([640.0, 420.0]),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
