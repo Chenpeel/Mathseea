@@ -1,8 +1,13 @@
 //! In-process egui graph rendering. The caller owns documents, layouts and relationship analysis.
 
 mod camera;
+mod camera3d;
 mod input;
+mod nebula;
+mod nebula_gpu;
 mod paint;
+
+pub use nebula::NebulaView;
 
 use egui::{Align2, Color32, FontId, PointerButton, Sense, Vec2};
 use mathseea_model::{GraphError, Highlight, ImportGraph, Layout, NodeId, Selection};

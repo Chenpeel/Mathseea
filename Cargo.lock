@@ -1204,6 +1204,7 @@ dependencies = [
 name = "mathseea-graph-view"
 version = "0.1.0"
 dependencies = [
+ "eframe",
  "egui",
  "mathseea-model",
 ]
